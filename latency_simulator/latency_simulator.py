@@ -6,19 +6,23 @@ import random
 
 class KafkaLatencySimulator:
     def __init__(self, bootstrap_servers=['kafka:29092']):
+        self.producer = None
+        self.topic = 'network_latency_metrics'
+        
         try:
+            print(f"Attempting to connect to Kafka at {bootstrap_servers}...")
             self.producer = KafkaProducer(
                 bootstrap_servers=bootstrap_servers,
                 value_serializer=lambda v: json.dumps(v).encode('utf-8')
             )
-            self.topic = 'network_latency_metrics'
+            print("Kafka producer initialized successfully.")
         except NoBrokersAvailable as e:
-            self.producer = None
             print(f"No Kafka brokers available: {e}")
-            # Additional error handling or logging
         except Exception as e:
-            self.producer = None
             print(f"Unexpected error connecting to Kafka: {e}")
+        
+        if not self.producer:
+            print("Kafka Producer could not be initialized.")
 
     def generate_network_conditions(self):
         """

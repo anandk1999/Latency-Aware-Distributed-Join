@@ -9,7 +9,7 @@ def test_spark_cluster_functionality():
     # Create Spark Session
     spark = SparkSession.builder \
         .appName("Cluster Validation Test") \
-        .master("spark://spark-master:7077") \
+        .master("spark://main:7077") \
         .getOrCreate()
 
     print("===== Spark Cluster Validation Tests =====")

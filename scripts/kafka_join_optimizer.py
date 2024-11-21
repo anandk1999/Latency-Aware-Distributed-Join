@@ -47,6 +47,7 @@ class KafkaLatencyAwareJoinOptimizer:
         """
         # Get average latency
         avg_latency = self._get_average_latency()
+        print(avg_latency)
         
         # Broadcast join heuristics
         if (left_size < 1000 or right_size < 1000) and avg_latency < 30:
