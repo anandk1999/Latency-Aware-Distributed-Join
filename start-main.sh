@@ -21,4 +21,6 @@ ssh-copy-id -i ~/.ssh/id_rsa -o 'IdentityFile ~/.ssh/shared_rsa' -o StrictHostKe
 # Start Spark in the background
 ~/start-spark.sh &
 
+chmod +x /opt/spark/scripts/induce_latency.sh
+
 tail -f /dev/null

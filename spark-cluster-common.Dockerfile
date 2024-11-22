@@ -21,6 +21,11 @@ RUN apt-get update && \
     apt-get install scala --yes && \
     apt-get install rsync --yes
 
+# Network latency packages
+RUN apt-get install -y iputils-ping && \ 
+    apt-get install -y iproute2 && \
+    apt-get install -y sudo 
+
 RUN wget https://www.apache.org/dist/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz && \
     tar -xzvf hadoop-3.3.6.tar.gz && \
     mv hadoop-3.3.6 /usr/local/hadoop && \

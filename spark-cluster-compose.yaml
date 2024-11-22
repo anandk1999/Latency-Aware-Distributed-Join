@@ -30,6 +30,8 @@ services:
       hostname: main
       tty: true
       stdin_open: true
+      cap_add:
+         - NET_ADMIN
       # environment:
       #    - SPARK_MODE=master
       #    - SPARK_RPC_AUTHENTICATION_ENABLED=no
@@ -52,6 +54,8 @@ services:
       hostname: worker1
       tty: true
       stdin_open: true
+      cap_add:
+         - NET_ADMIN
       # environment:
       #    - SPARK_MODE=worker
       #    - SPARK_MASTER_URL=spark://spark-master:7077
@@ -72,6 +76,8 @@ services:
    worker2:
       image: spark-cluster-worker
       hostname: worker2
+      cap_add:
+         - NET_ADMIN
       # environment:
       #    - SPARK_MODE=worker
       #    - SPARK_MASTER_URL=spark://main:7077
