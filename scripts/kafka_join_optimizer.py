@@ -224,50 +224,139 @@ class KafkaLatencyAwareJoinOptimizer:
     #     # Start Kafka consumer in a daemon thread
     #     threading.Thread(target=consume_latency, daemon=True).start()
 
-    def choose_join_strategy(self, left_size, right_size, BROADCAST_THRESHOLD = 10*1024*1024, HIGH_LATENCY_THRESHOLD = 250):
-        """
-        Dynamically choose join strategy based on:
-        1. Table sizes
-        2. Current network latency
-        """
-        # Get average latency
-        avg_latency = self.metrics_collector.get_max_latency()
+    # def choose_join_strategy(self, left_size, right_size, BROADCAST_THRESHOLD = 10*1024*1024, HIGH_LATENCY_THRESHOLD = 250):
+    #     """
+    #     Dynamically choose join strategy based on:
+    #     1. Table sizes
+    #     2. Current network latency
+    #     """
+    #     # Get average latency
+    #     avg_latency = self.metrics_collector.get_max_latency()
 
-        print("\n\n\nAverage latency: ", avg_latency)
+    #     print("\n\n\nAverage latency: ", avg_latency)
         
-        smaller_size = min(left_size, right_size)
-        print("smaller size", smaller_size)
+    #     smaller_size = min(left_size, right_size)
+    #     print("smaller size", smaller_size)
 
-        if smaller_size <= BROADCAST_THRESHOLD:
-            return 'broadcast'
-        elif avg_latency >= HIGH_LATENCY_THRESHOLD:
-            return 'merge' #sort merge join
-        else:
-            return 'shuffle_hash'
+    #     if smaller_size <= BROADCAST_THRESHOLD:
+    #         return 'broadcast'
+    #     elif avg_latency >= HIGH_LATENCY_THRESHOLD:
+    #         return 'merge' #sort merge join
+    #     else:
+    #         return 'shuffle_hash'
+
+    def calculate_cost(network_latency, table_sizes, join_type):
+        """
+        Calculate total cost based on realistic computation and resource factors.
+        """
+        left_size, right_size = table_sizes
         
+        # Network Cost
+        if join_type == 'broadcast':
+            data_transfer_volume = min(left_size, right_size)
+        elif join_type == 'shuffle':
+            data_transfer_volume = left_size + right_size
+        elif join_type == 'sort_merge':
+            data_transfer_volume = left_size + right_size  # Sorting minimizes network shuffles
+        else:  # Nested-loop
+            data_transfer_volume = left_size if right_size < left_size else right_size
+        
+        network_cost = network_latency * data_transfer_volume
+        
+        # Computation Cost (realistic factors)
+        if join_type == 'broadcast':
+            computation_cost = left_size * right_size * 0.05  # Factor based on benchmarks
+        elif join_type == 'shuffle':
+            computation_cost = left_size * right_size * 0.3
+        elif join_type == 'sort_merge':
+            computation_cost = (left_size * np.log2(left_size) + right_size * np.log2(right_size)) * 0.2
+        else:  # Nested-loop
+            computation_cost = left_size * right_size * 0.8
+        
+        # Resource Cost (realistic factors)
+        if join_type == 'broadcast':
+            resource_cost = 0.4 * min(left_size, right_size)  # Memory-intensive
+        elif join_type == 'shuffle':
+            resource_cost = 0.6 * (left_size + right_size)   # High shuffle overhead
+        elif join_type == 'sort_merge':
+            resource_cost = 0.5 * (left_size + right_size)   # Sorting requires moderate resources
+        else:  # Nested-loop
+            resource_cost = 0.7 * max(left_size, right_size) # High memory/CPU usage
+        
+        return network_cost + computation_cost + resource_cost
+
+    def choose_join_strategy(self, left_size, right_size):
+        """
+        Dynamically choose the best join strategy based on the cost model.
+        """
+        avg_latency = self.metrics_collector.get_average_latency()
+        
+        # Calculate costs for each strategy
+        costs = {
+            'broadcast': self.calculate_cost(avg_latency, (left_size, right_size), 'broadcast'),
+            'shuffle': self.calculate_cost(avg_latency, (left_size, right_size), 'shuffle'),
+            'sort_merge': self.calculate_cost(avg_latency, (left_size, right_size), 'sort_merge'),
+            'nested_loop': self.calculate_cost(avg_latency, (left_size, right_size), 'nested_loop')
+        }
+        
+        # Select the strategy with the lowest cost
+        return min(costs, key=costs.get)
 
     def distributed_join(self, left_df, right_df, join_key, smart=False):
         """
-        Perform a distributed join with latency-aware strategy
+        Perform a distributed join with latency-aware strategy.
         """
-
-
-        # Estimate table sizes
-        # left_size_details = estimate_dataframe_size(left_df)
-        left_size_details = {"estimated_total_size_bytes": 719000000}
-
-        # right_size_details = estimate_dataframe_size(right_df)
-        right_size_details = {"estimated_total_size_bytes": 719000000}
-        # Choose join strategy
-        strategy = self.choose_join_strategy(left_size_details["estimated_total_size_bytes"], right_size_details["estimated_total_size_bytes"])
-        print("\n\n\n######################")
-        print("Join strategy to be used ", strategy, "\n\n\n")
+        left_size = left_df.count()
+        right_size = right_df.count()
+        
+        strategy = self.choose_join_strategy(left_size, right_size)
 
         if not smart:
             print("\n\n\n######################")
             print("No strategy. Dumb Join.\n\n\n")
             return left_df.join(right_df, left_df[join_key] == right_df[join_key])
-        return left_df.hint(strategy).join(right_df, left_df[join_key] == right_df[join_key])
+        
+        if strategy == 'broadcast':
+            print(f"Using Broadcast Join (Left: {left_size}, Right: {right_size})")
+            return left_df.join(broadcast(right_df), left_df[join_key] == right_df[join_key])
+        
+        elif strategy == 'shuffle':
+            print(f"Using Shuffle Join (Left: {left_size}, Right: {right_size})")
+            return left_df.join(right_df, left_df[join_key] == right_df[join_key])
+        
+        elif strategy == 'sort_merge':
+            print(f"Using Sort-Merge Join (Left: {left_size}, Right: {right_size})")
+            sorted_left = left_df.sort(join_key)
+            sorted_right = right_df.sort(join_key)
+            return sorted_left.join(sorted_right, sorted_left[join_key] == sorted_right[join_key])
+        
+        else:  # Nested-loop
+            print(f"Using Nested-Loop Join (Left: {left_size}, Right: {right_size})")
+            return left_df.crossJoin(right_df).filter(left_df[join_key] == right_df[join_key])
+        
+
+    # def distributed_join(self, left_df, right_df, join_key, smart=False):
+    #     """
+    #     Perform a distributed join with latency-aware strategy
+    #     """
+
+
+    #     # Estimate table sizes
+    #     # left_size_details = estimate_dataframe_size(left_df)
+    #     left_size_details = {"estimated_total_size_bytes": 719000000}
+
+    #     # right_size_details = estimate_dataframe_size(right_df)
+    #     right_size_details = {"estimated_total_size_bytes": 719000000}
+    #     # Choose join strategy
+    #     strategy = self.choose_join_strategy(left_size_details["estimated_total_size_bytes"], right_size_details["estimated_total_size_bytes"])
+    #     print("\n\n\n######################")
+    #     print("Join strategy to be used ", strategy, "\n\n\n")
+
+    #     if not smart:
+    #         print("\n\n\n######################")
+    #         print("No strategy. Dumb Join.\n\n\n")
+    #         return left_df.join(right_df, left_df[join_key] == right_df[join_key])
+    #     return left_df.hint(strategy).join(right_df, left_df[join_key] == right_df[join_key])
 
 def main():
     # Create Spark Session with Kafka dependencies
