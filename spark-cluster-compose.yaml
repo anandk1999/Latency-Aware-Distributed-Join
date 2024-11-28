@@ -35,11 +35,14 @@ services:
       environment:
          - SPARK_MODE=master
          - SPARK_DISABLE_LOCAL_FALLBACK=true
+         # - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
+         # - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
       #    - SPARK_RPC_AUTHENTICATION_ENABLED=no
       #    - SPARK_RPC_ENCRYPTION_ENABLED=no
       #    - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       #    - SPARK_SSL_ENABLED=no
       ports:
+        - 8088:8088
         - 8080:8080
         - 8081:8081
       volumes:
@@ -60,6 +63,8 @@ services:
       environment:
          - SPARK_MODE=worker
          - SPARK_MASTER_URL=spark://spark-master:7077
+         # - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
+         # - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
       #    - SPARK_WORKER_CORES=2
       #    - SPARK_WORKER_MEMORY=4g
       #    - SPARK_RPC_AUTHENTICATION_ENABLED=no
@@ -83,6 +88,8 @@ services:
       environment:
          - SPARK_MODE=worker
          - SPARK_MASTER_URL=spark://main:7077
+         # - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
+         # - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
       #    - SPARK_WORKER_CORES=2
       #    - SPARK_WORKER_MEMORY=4g
       #    - SPARK_RPC_AUTHENTICATION_ENABLED=no

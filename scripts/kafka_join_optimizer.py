@@ -315,18 +315,18 @@ class KafkaLatencyAwareJoinOptimizer:
         if not smart:
             print("\n\n\n######################")
             print("No strategy. Dumb Join.\n\n\n")
-            self.spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
+            # self.spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
             left_df.createOrReplaceTempView("l_df")
             right_df.createOrReplaceTempView("r_df")
 
-            result = self.spark.sql(f"""
-                SELECT /*+ SHUFFLE_HASH(l_df) */ *
-                FROM l_df
-                JOIN r_df ON l_df.{join_key} = r_df.{join_key}
-            """)
+            # result = self.spark.sql(f"""
+            #     SELECT /*+ SHUFFLE_HASH(l_df) */ *
+            #     FROM l_df
+            #     JOIN r_df ON l_df.{join_key} = r_df.{join_key}
+            # """)
 
-            # result = left_df.join(right_df, left_df[join_key] == right_df[join_key])
-            # print(result.explain())
+            result = left_df.join(right_df, left_df[join_key] == right_df[join_key])
+            print(result.explain())
         
         elif strategy == 'broadcast':
             print(f"Using Broadcast Join (Left: {left_size}, Right: {right_size})")
@@ -413,22 +413,29 @@ def main():
     start_time = time.time()
 
     # Create sample distributed dataframes
-    left_df = spark.read.csv('/opt/spark/data/tables/lineitem.csv', header=False, sep="|")
-    l_headers = ['orderkey', 'l_partkey', 'l_suppkey', 'l_linenumber', 'l_quantity', 'l_extendedprice',
-                        'l_discount', 'l_tax', 'l_returnflag', 'l_linestatus', 'l_shipdate', 'l_commitdate',
-                        'l_receiptdate', 'l_shipinstruct', 'l_shipmode', 'l_comment']
+    # left_df = spark.read.csv('/opt/spark/data/tables/lineitem.csv', header=False, sep="|")
+    # l_headers = ['orderkey', 'l_partkey', 'l_suppkey', 'l_linenumber', 'l_quantity', 'l_extendedprice',
+    #                     'l_discount', 'l_tax', 'l_returnflag', 'l_linestatus', 'l_shipdate', 'l_commitdate',
+    #                     'l_receiptdate', 'l_shipinstruct', 'l_shipmode', 'l_comment']
+    # left_df = left_df.toDF(*l_headers)
+    # left_df = left_df.repartition(32)
+    left_df = spark.read.csv('/opt/spark/data/tables/customer.csv', header=False, sep="|")
+    l_headers = ['custkey', 'c_name', 'c_address', 'c_nationkey', 'c_phone', 'c_acctbal', 'c_mktsegment',
+                        'c_comment']
     left_df = left_df.toDF(*l_headers)
+    left_df = left_df.repartition(32)
 
     right_df = spark.read.csv('/opt/spark/data/tables/orders.csv', header=False, sep="|")
-    r_headers = ['orderkey', 'o_custkey', 'o_orderstatus', 'o_totalprice', 'o_orderdate', 'o_orderpriority',
+    r_headers = ['orderkey', 'custkey', 'o_orderstatus', 'o_totalprice', 'o_orderdate', 'o_orderpriority',
                       'o_clerk', 'o_shippriority', 'o_comment']
     right_df = right_df.toDF(*r_headers)
+    right_df = right_df.repartition(32)
 
     # Initialize Latency-Aware Join Optimizer
     join_optimizer = KafkaLatencyAwareJoinOptimizer(spark, metrics_collector)
 
     # Perform distributed join
-    result_df = join_optimizer.distributed_join(left_df, right_df, "orderkey", smart=False)
+    result_df = join_optimizer.distributed_join(left_df, right_df, "custkey", smart=True)
 
     end_time = time.time()
     # Show results

@@ -12,4 +12,16 @@
         <name>yarn.resourcemanager.hostname</name>
         <value>main</value>
     </property>
+    <property>
+        <name>yarn.nodemanager.linux-container-executor.group</name>
+        <value>hadoop</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.runtime.linux.docker.enabled</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.runtime.linux.docker.default-container-network</name>
+        <value>bridge</value>
+    </property>
 </configuration>
