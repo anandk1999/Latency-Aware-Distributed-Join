@@ -49,7 +49,7 @@ WORKER1_IP="192.168.10.3"
 WORKER2_IP="192.168.10.4"
 
 # Define latency (in milliseconds) for each pair
-LATENCY_MASTER_WORKER1="150ms"
+LATENCY_MASTER_WORKER1="50ms"
 LATENCY_MASTER_WORKER2="1500ms"
 
 # Check if existing latency is already applied and remove it

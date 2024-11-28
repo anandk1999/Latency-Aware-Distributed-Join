@@ -1,3 +1,4 @@
+import numpy as np
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import broadcast
 import json
@@ -245,7 +246,7 @@ class KafkaLatencyAwareJoinOptimizer:
     #     else:
     #         return 'shuffle_hash'
 
-    def calculate_cost(network_latency, table_sizes, join_type):
+    def calculate_cost(self, network_latency, table_sizes, join_type):
         """
         Calculate total cost based on realistic computation and resource factors.
         """
@@ -314,26 +315,52 @@ class KafkaLatencyAwareJoinOptimizer:
         if not smart:
             print("\n\n\n######################")
             print("No strategy. Dumb Join.\n\n\n")
-            return left_df.join(right_df, left_df[join_key] == right_df[join_key])
+            self.spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
+            left_df.createOrReplaceTempView("l_df")
+            right_df.createOrReplaceTempView("r_df")
+
+            result = self.spark.sql(f"""
+                SELECT /*+ SHUFFLE_HASH(l_df) */ *
+                FROM l_df
+                JOIN r_df ON l_df.{join_key} = r_df.{join_key}
+            """)
+
+            # result = left_df.join(right_df, left_df[join_key] == right_df[join_key])
+            # print(result.explain())
         
-        if strategy == 'broadcast':
+        elif strategy == 'broadcast':
             print(f"Using Broadcast Join (Left: {left_size}, Right: {right_size})")
-            return left_df.join(broadcast(right_df), left_df[join_key] == right_df[join_key])
+            if left_size < right_size:
+                result = broadcast(left_df).join(right_df, left_df[join_key] == right_df[join_key])
+
+            else:
+                result = left_df.join(broadcast(right_df), left_df[join_key] == right_df[join_key])
+
         
         elif strategy == 'shuffle':
             print(f"Using Shuffle Join (Left: {left_size}, Right: {right_size})")
-            return left_df.join(right_df, left_df[join_key] == right_df[join_key])
+            left_df.createOrReplaceTempView("l_df")
+            right_df.createOrReplaceTempView("r_df")
+
+            result = self.spark.sql(f"""
+                SELECT /*+ SHUFFLE_HASH(l_df) */ *
+                FROM l_df
+                JOIN r_df ON l_df.{join_key} = r_df.{join_key}
+            """)
         
         elif strategy == 'sort_merge':
             print(f"Using Sort-Merge Join (Left: {left_size}, Right: {right_size})")
             sorted_left = left_df.sort(join_key)
             sorted_right = right_df.sort(join_key)
-            return sorted_left.join(sorted_right, sorted_left[join_key] == sorted_right[join_key])
+            result =  sorted_left.join(sorted_right, sorted_left[join_key] == sorted_right[join_key])
         
         else:  # Nested-loop
             print(f"Using Nested-Loop Join (Left: {left_size}, Right: {right_size})")
-            return left_df.crossJoin(right_df).filter(left_df[join_key] == right_df[join_key])
+            result=  left_df.crossJoin(right_df).filter(left_df[join_key] == right_df[join_key])
         
+        print("####### Explain!!!!")
+        print(result.explain())
+        return result
 
     # def distributed_join(self, left_df, right_df, join_key, smart=False):
     #     """
@@ -367,8 +394,18 @@ def main():
         .master("spark://main:7077") \
         .config("spark.jars.packages", 
                 "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0") \
+        .config("spark.scheduler.mode", "FAIR") \
+        .config("spark.locality.wait", "0s") \
+        .config("spark.scheduler.disable.localFallback", "true") \
+        .config("spark.scheduler.minRegisteredResourcesRatio", "1.0") \
+        .config("spark.network.timeout", "300s") \
+        .config("spark.executor.heartbeatInterval","60s") \
+        .config("spark.rpc.askTimeout","300s") \
+        .config("spark.task.maxFailures","10") \
+        .config("spark.locality.wait","5s") \
         .getOrCreate()
     
+
     # Initialize Network Metrics Collector
     metrics_collector = NetworkLatencyMetricsCollector()
     metrics_collector.start_collection()
@@ -397,21 +434,20 @@ def main():
     # Show results
     result_df.show()
     print("\nTotal time taken for join: ", end_time-start_time," seconds")
-    print("\nStopping metrics collection...")
-    metrics_collector.stop_collection()
-    spark.stop()
+    # metrics_collector.stop_collection()
+    # spark.stop()
 
-    # try:
-    #     while True:
-    #         time.sleep(30)
-    #         # Periodically print current latency metrics
-    #         print("\nCurrent Latency Metrics:")
-    #         for host, metrics in metrics_collector.latency_metrics.items():
-    #             print(f"{host}: {metrics}")
-    # except KeyboardInterrupt:
-    #     print("\nStopping metrics collection...")
-    #     metrics_collector.stop_collection()
-    #     spark.stop()
+    try:
+        while True:
+            time.sleep(30)
+            # Periodically print current latency metrics
+            print("\nCurrent Latency Metrics:")
+            for host, metrics in metrics_collector.latency_metrics.items():
+                print(f"{host}: {metrics}")
+    except KeyboardInterrupt:
+        print("\nStopping metrics collection...")
+        metrics_collector.stop_collection()
+        spark.stop()
 
     # # Keep the application running to observe Kafka metrics
     # time.sleep(120)

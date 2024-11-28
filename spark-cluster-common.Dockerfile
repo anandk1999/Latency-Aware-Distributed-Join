@@ -48,7 +48,8 @@ RUN wget https://archive.apache.org/dist/kafka/3.5.0/kafka_2.12-3.5.0.tgz && \
 
 # Install PySpark and Kafka Python dependencies
 RUN python3 -m pip install --upgrade pip && \
-    pip install pyspark==3.4.1 kafka-python
+    pip install pyspark==3.4.1 kafka-python && \
+    pip install numpy
 
 ENV KAFKA_HOME=/usr/local/kafka
 ENV PATH=$PATH:$KAFKA_HOME/bin
@@ -70,6 +71,7 @@ COPY config/* /tmp/
 RUN mv /tmp/ssh_config ~/.ssh/config && \
     mv /tmp/hadoop-env.sh $HADOOP_HOME/etc/hadoop/hadoop-env.sh && \
     mv /tmp/spark-env.sh $SPARK_HOME/conf/spark-env.sh && \
+    mv /tmp/spark-defaults.conf $SPARK_HOME/conf/spark-defaults.conf && \
     mv /tmp/hdfs-site.xml $HADOOP_HOME/etc/hadoop/hdfs-site.xml && \ 
     mv /tmp/core-site.xml $HADOOP_HOME/etc/hadoop/core-site.xml && \
     mv /tmp/mapred-site.xml $HADOOP_HOME/etc/hadoop/mapred-site.xml && \
