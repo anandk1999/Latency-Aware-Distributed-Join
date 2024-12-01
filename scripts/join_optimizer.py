@@ -1,6 +1,4 @@
 import numpy as np
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import broadcast
 import json
 import threading
 import time
@@ -8,6 +6,8 @@ import ast
 import subprocess
 import platform
 
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import broadcast
 from pyspark.sql.types import *
 
 def estimate_dataframe_size(df):
@@ -56,9 +56,6 @@ def estimate_dataframe_size(df):
         'estimated_total_size_bytes': estimated_size_bytes,
         'estimated_total_size_mb': estimated_size_bytes / (1024 * 1024)
     }
-
-
-
 
 class NetworkLatencyMetricsCollector:
     def __init__(self, target_hosts=None):
@@ -191,60 +188,10 @@ class NetworkLatencyMetricsCollector:
         """
         self.stop_event.set()
 
-class KafkaLatencyAwareJoinOptimizer:
+class LatencyAwareJoinOptimizer:
     def __init__(self, spark_session, metrics_collector):
         self.spark = spark_session
         self.metrics_collector = metrics_collector
-        # self.current_latency_matrix = {}
-        # self.latency_lock = threading.Lock()
-        
-        # # Start Kafka consumer in background
-        # self.start_latency_listener()
-
-    # def start_latency_listener(self):
-    #     """Start a background thread to consume Kafka latency metrics"""
-    #     def consume_latency():
-    #         consumer = KafkaConsumer(
-    #             'network_latency_metrics',
-    #             bootstrap_servers=['kafka:29092'],
-    #             group_id='join-optimizer-group',
-    #             auto_offset_reset='latest',
-    #             enable_auto_commit=True,
-    #             value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-    #         )
-
-    #         for message in consumer:
-    #             try:
-    #                 # Thread-safe update of latency matrix
-    #                 with self.latency_lock:
-    #                     self.current_latency_matrix = message.value.get('latency_metrics', {})
-    #                     print("Updated latency metrics received")
-    #             except Exception as e:
-    #                 print(f"Error processing Kafka message: {e}")
-
-    #     # Start Kafka consumer in a daemon thread
-    #     threading.Thread(target=consume_latency, daemon=True).start()
-
-    # def choose_join_strategy(self, left_size, right_size, BROADCAST_THRESHOLD = 10*1024*1024, HIGH_LATENCY_THRESHOLD = 250):
-    #     """
-    #     Dynamically choose join strategy based on:
-    #     1. Table sizes
-    #     2. Current network latency
-    #     """
-    #     # Get average latency
-    #     avg_latency = self.metrics_collector.get_max_latency()
-
-    #     print("\n\n\nAverage latency: ", avg_latency)
-        
-    #     smaller_size = min(left_size, right_size)
-    #     print("smaller size", smaller_size)
-
-    #     if smaller_size <= BROADCAST_THRESHOLD:
-    #         return 'broadcast'
-    #     elif avg_latency >= HIGH_LATENCY_THRESHOLD:
-    #         return 'merge' #sort merge join
-    #     else:
-    #         return 'shuffle_hash'
 
     def calculate_cost(self, network_latency, table_sizes, join_type):
         """
@@ -314,7 +261,8 @@ class KafkaLatencyAwareJoinOptimizer:
 
         if not smart:
             print("\n\n\n######################")
-            print("No strategy. Dumb Join.\n\n\n")
+            print("No strategy. Not Aware Join.\n\n\n")
+            print("\n\n\n######################")
             # self.spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
             left_df.createOrReplaceTempView("l_df")
             right_df.createOrReplaceTempView("r_df")
@@ -326,7 +274,6 @@ class KafkaLatencyAwareJoinOptimizer:
             # """)
 
             result = left_df.join(right_df, left_df[join_key] == right_df[join_key])
-            print(result.explain())
         
         elif strategy == 'broadcast':
             print(f"Using Broadcast Join (Left: {left_size}, Right: {right_size})")
@@ -358,39 +305,14 @@ class KafkaLatencyAwareJoinOptimizer:
             print(f"Using Nested-Loop Join (Left: {left_size}, Right: {right_size})")
             result=  left_df.crossJoin(right_df).filter(left_df[join_key] == right_df[join_key])
         
-        print("####### Explain!!!!")
-        print(result.explain())
         return result
-
-    # def distributed_join(self, left_df, right_df, join_key, smart=False):
-    #     """
-    #     Perform a distributed join with latency-aware strategy
-    #     """
-
-
-    #     # Estimate table sizes
-    #     # left_size_details = estimate_dataframe_size(left_df)
-    #     left_size_details = {"estimated_total_size_bytes": 719000000}
-
-    #     # right_size_details = estimate_dataframe_size(right_df)
-    #     right_size_details = {"estimated_total_size_bytes": 719000000}
-    #     # Choose join strategy
-    #     strategy = self.choose_join_strategy(left_size_details["estimated_total_size_bytes"], right_size_details["estimated_total_size_bytes"])
-    #     print("\n\n\n######################")
-    #     print("Join strategy to be used ", strategy, "\n\n\n")
-
-    #     if not smart:
-    #         print("\n\n\n######################")
-    #         print("No strategy. Dumb Join.\n\n\n")
-    #         return left_df.join(right_df, left_df[join_key] == right_df[join_key])
-    #     return left_df.hint(strategy).join(right_df, left_df[join_key] == right_df[join_key])
 
 def main():
     # Create Spark Session with Kafka dependencies
     
 
     spark = SparkSession.builder \
-        .appName("Kafka-Enabled Latency-Aware Distributed Join") \
+        .appName("Latency-Aware Distributed Join") \
         .master("spark://main:7077") \
         .config("spark.jars.packages", 
                 "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0") \
@@ -412,37 +334,63 @@ def main():
 
     start_time = time.time()
 
-    # Create sample distributed dataframes
-    # left_df = spark.read.csv('/opt/spark/data/tables/lineitem.csv', header=False, sep="|")
-    # l_headers = ['orderkey', 'l_partkey', 'l_suppkey', 'l_linenumber', 'l_quantity', 'l_extendedprice',
-    #                     'l_discount', 'l_tax', 'l_returnflag', 'l_linestatus', 'l_shipdate', 'l_commitdate',
-    #                     'l_receiptdate', 'l_shipinstruct', 'l_shipmode', 'l_comment']
-    # left_df = left_df.toDF(*l_headers)
-    # left_df = left_df.repartition(32)
-    left_df = spark.read.csv('/opt/spark/data/tables/customer.csv', header=False, sep="|")
-    l_headers = ['custkey', 'c_name', 'c_address', 'c_nationkey', 'c_phone', 'c_acctbal', 'c_mktsegment',
-                        'c_comment']
+    ############## Create sample distributed dataframes
+    #### Table A
+    left_df = spark.read.csv('/opt/spark/data/tables/tableA.csv', header=False, sep="|")
+    l_headers = ['join_c1', '_c1', '_c2', '_c3', '_c4', '_c5',
+                        '_c6', '_c7', '_c8', '_c9', '_c10', '_11',
+                        '_c12', '_c13', '_c14', '_c15']
     left_df = left_df.toDF(*l_headers)
     left_df = left_df.repartition(32)
 
-    right_df = spark.read.csv('/opt/spark/data/tables/orders.csv', header=False, sep="|")
-    r_headers = ['orderkey', 'custkey', 'o_orderstatus', 'o_totalprice', 'o_orderdate', 'o_orderpriority',
-                      'o_clerk', 'o_shippriority', 'o_comment']
+    #### Table B
+    # left_df = spark.read.csv('/opt/spark/data/tables/tableB.csv', header=False, sep="|")
+    # l_headers = ['join_c2', '_c1', '_c2', '_c3', '_c4', '_c5', '_c6', '_c7']
+    # left_df = left_df.toDF(*l_headers)
+    # left_df = left_df.repartition(32)
+
+    #### Table C
+    right_df = spark.read.csv('/opt/spark/data/tables/tableC.csv', header=False, sep="|")
+    r_headers = ['join_c1', '_c1', '_c2', '_c3', '_c4', '_c5',
+                        '_c6', '_c7', '_c8']
     right_df = right_df.toDF(*r_headers)
     right_df = right_df.repartition(32)
 
+    #### Table D
+    # right_df = spark.read.csv('/opt/spark/data/tables/tableD.csv', header=False, sep="|")
+    # r_headers = ['join_c2', '_c1', '_c2', '_c3', '_c4', '_c5', '_c6', '_c7']
+    # right_df = right_df.toDF(*r_headers)
+    # right_df = right_df.repartition(32)
+
+    #### Table E
+    # right_df = spark.read.csv('/opt/spark/data/tables/tableE.csv', header=False, sep="|")
+    # r_headers = ['_c1', '_c2', '_c3', '_c4', 'join_c1', '_c5', '_c6', '_c7', '_c8', '_c9', '_c10', '_11', '_c12', '_c13', '_c14', '_c15']
+    # right_df = right_df.toDF(*r_headers)
+    # right_df = right_df.repartition(32)
+
+    #### Table F
+    # right_df = spark.read.csv('/opt/spark/data/tables/tableF.csv', header=False, sep="|")
+    # r_headers = ['_c1', 'join_c1' '_c2', '_c3', '_c4', '_c5', '_c6', '_c7', '_c8']
+    # right_df = right_df.toDF(*r_headers)
+    # right_df = right_df.repartition(32)
+
+    #### Table G
+    # right_df = spark.read.csv('/opt/spark/data/tables/tableG.csv', header=False, sep="|")
+    # r_headers = ['_c1', '_c2', 'join_c2', '_c3', '_c4', '_c5', '_c6', '_c7']
+    # right_df = right_df.toDF(*r_headers)
+    # right_df = right_df.repartition(32)
+
     # Initialize Latency-Aware Join Optimizer
-    join_optimizer = KafkaLatencyAwareJoinOptimizer(spark, metrics_collector)
+    join_optimizer = LatencyAwareJoinOptimizer(spark, metrics_collector)
 
     # Perform distributed join
     result_df = join_optimizer.distributed_join(left_df, right_df, "custkey", smart=True)
 
-    end_time = time.time()
     # Show results
     result_df.show()
+    
+    end_time = time.time()
     print("\nTotal time taken for join: ", end_time-start_time," seconds")
-    # metrics_collector.stop_collection()
-    # spark.stop()
 
     try:
         while True:
@@ -458,7 +406,6 @@ def main():
 
     # # Keep the application running to observe Kafka metrics
     # time.sleep(120)
-
     # spark.stop()
 
 if __name__ == "__main__":

@@ -1,5 +1,83 @@
 version: "2.4"
 services:
+   main:
+      image: spark-cluster-main
+      hostname: main
+      tty: true
+      stdin_open: true
+      cap_add:
+         - NET_ADMIN
+      environment:
+         - SPARK_MODE=master
+         - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
+         - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
+      ports:
+        - 8088:8088
+        - 8080:8080
+        - 8081:8081
+      volumes:
+         - ./scripts:/opt/spark/scripts
+         - ./data:/opt/spark/data
+      networks:
+         spark-network:
+            ipv4_address: 192.168.10.2
+      command: ["/bin/bash", "start-main.sh"]
+
+   worker1:
+      image: spark-cluster-worker
+      hostname: worker1
+      tty: true
+      stdin_open: true
+      cap_add:
+         - NET_ADMIN
+      environment:
+         - SPARK_MODE=worker
+         - SPARK_MASTER_URL=spark://spark-master:7077
+         - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
+         - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
+      depends_on:
+         - main
+      ports:
+        - 8082:8082
+      volumes:
+         - ./scripts:/opt/spark/scripts
+         - ./data:/opt/spark/data
+      networks:
+         spark-network:
+            ipv4_address: 192.168.10.3
+      command: ["/bin/bash", "start-worker.sh"]
+
+   worker2:
+      image: spark-cluster-worker
+      hostname: worker2
+      cap_add:
+         - NET_ADMIN
+      environment:
+         - SPARK_MODE=worker
+         - SPARK_MASTER_URL=spark://main:7077
+         - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
+         - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
+      tty: true
+      stdin_open: true
+      depends_on:
+         - main
+      ports:
+        - 8083:8083
+      volumes:
+         - ./scripts:/opt/spark/scripts
+         - ./data:/opt/spark/data
+      networks:
+         spark-network:
+            ipv4_address: 192.168.10.4
+      command: ["/bin/bash", "start-worker.sh"]
+
+networks:
+  spark-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.10.0/24
+
    # zookeeper:
    #    image: confluentinc/cp-zookeeper:latest
    #    environment:
@@ -25,87 +103,6 @@ services:
    #    networks:
    #       spark-network:
    #          ipv4_address: 192.168.10.11
-   main:
-      image: spark-cluster-main
-      hostname: main
-      tty: true
-      stdin_open: true
-      cap_add:
-         - NET_ADMIN
-      environment:
-         - SPARK_MODE=master
-         - SPARK_DISABLE_LOCAL_FALLBACK=true
-         # - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
-         # - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
-      #    - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      #    - SPARK_RPC_ENCRYPTION_ENABLED=no
-      #    - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      #    - SPARK_SSL_ENABLED=no
-      ports:
-        - 8088:8088
-        - 8080:8080
-        - 8081:8081
-      volumes:
-         - ./scripts:/opt/spark/scripts
-         - ./data:/opt/spark/data
-      networks:
-         spark-network:
-            ipv4_address: 192.168.10.2
-      command: ["/bin/bash", "start-main.sh"]
-
-   worker1:
-      image: spark-cluster-worker
-      hostname: worker1
-      tty: true
-      stdin_open: true
-      cap_add:
-         - NET_ADMIN
-      environment:
-         - SPARK_MODE=worker
-         - SPARK_MASTER_URL=spark://spark-master:7077
-         # - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
-         # - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
-      #    - SPARK_WORKER_CORES=2
-      #    - SPARK_WORKER_MEMORY=4g
-      #    - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      depends_on:
-         - main
-      ports:
-        - 8082:8082
-      volumes:
-         - ./scripts:/opt/spark/scripts
-         - ./data:/opt/spark/data
-      networks:
-         spark-network:
-            ipv4_address: 192.168.10.3
-      command: ["/bin/bash", "start-worker.sh"]
-
-   worker2:
-      image: spark-cluster-worker
-      hostname: worker2
-      cap_add:
-         - NET_ADMIN
-      environment:
-         - SPARK_MODE=worker
-         - SPARK_MASTER_URL=spark://main:7077
-         # - HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
-         # - YARN_CONF_DIR=/usr/local/hadoop/etc/hadoop
-      #    - SPARK_WORKER_CORES=2
-      #    - SPARK_WORKER_MEMORY=4g
-      #    - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      tty: true
-      stdin_open: true
-      depends_on:
-         - main
-      ports:
-        - 8083:8083
-      volumes:
-         - ./scripts:/opt/spark/scripts
-         - ./data:/opt/spark/data
-      networks:
-         spark-network:
-            ipv4_address: 192.168.10.4
-      command: ["/bin/bash", "start-worker.sh"]
    
    # latency-simulator:
    #    image: python:3.9-slim
@@ -119,10 +116,3 @@ services:
    #    networks:
    #       spark-network:
    #          ipv4_address: 192.168.10.5
-
-networks:
-  spark-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 192.168.10.0/24
